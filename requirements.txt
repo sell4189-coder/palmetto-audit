@@ -2,3 +2,4 @@
 dnspython
 streamlit
 reportlab
+requests
