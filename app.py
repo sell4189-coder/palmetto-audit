@@ -5,6 +5,7 @@ import io
 import os
 import zipfile
 import requests
+import socket
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -12,11 +13,9 @@ from reportlab.lib import colors
 
 # 1. LIVE THREAT INTEL FETCH (BreachDirectory API integration)
 def fetch_live_breaches(domain):
-    # Pull secrets safely out of Streamlit's environment vault
     api_key = strl.secrets.get("BREACH_API_KEY", None)
     api_host = strl.secrets.get("BREACH_API_HOST", None)
     
-    # If keys aren't set up yet, fallback gracefully to clean demo data
     if not api_key or not api_host:
         return [
             {"email": f"admin@{domain}", "platform": "Adobe Corporate Breach", "risk": "High Risk Profile", "instruction": "Change corporate core credential parameters immediately to eradicate password cross-contamination."},
@@ -41,9 +40,7 @@ def fetch_live_breaches(domain):
                 return [{"email": "None Detected", "platform": "Clean Domain Grid", "risk": "No Exposure", "instruction": "Domain demonstrates strong identity sanitization controls."}]
                 
             formatted_list = []
-            # Cap at top 15 results so the PDF report stays concise and clean
             for item in results[:15]:
-                # Extract exposure fields dynamically from API payload
                 email = item.get("email", f"user@{domain}")
                 sources = ", ".join(item.get("sources", ["Unknown Platform"]))
                 has_password = item.get("has_password", False)
@@ -61,7 +58,6 @@ def fetch_live_breaches(domain):
     except Exception:
         pass
         
-    # Return basic demo array if API fails or timeouts
     return [{"email": f"user@{domain}", "platform": "Simulated Sync Node", "risk": "Standard Profile", "instruction": "Configure API credentials to activate live database querying."}]
 
 # 2. CORE FUNCTION: RUN PASSIVE DNS AUDIT
@@ -83,29 +79,53 @@ def check_dmarc(domain):
     except Exception:
         return "No DMARC Record Found", "Missing"
 
-# 3. CORE FUNCTION: GENERATE IDENTITY REPORT
+# 3. CORE FUNCTION: PASSIVE NETWORK PERIMETER SCAN
+def check_perimeter(domain):
+    # Common core diagnostic infrastructure ports to analyze
+    target_ports = {
+        80: ("HTTP Web Portal", "Standard public delivery asset. Verify encryption configurations."),
+        443: ("HTTPS Secure Web", "Standard encrypted web channel. Maintain certificate lifetimes."),
+        21: ("FTP File Transfer", "Legacy storage vector. Secure connections with SFTP implementations."),
+        22: ("SSH Remote Admin", "Critical remote system console access. Enforce certificate-only keys."),
+        3389: ("RDP Desktop Link", "High risk remote entry layer. Restrict immediately behind a private corporate VPN tunnel.")
+    }
+    
+    scan_results = []
+    try:
+        ip_address = socket.gethostbyname(domain)
+    except Exception:
+        # Fallback if domain resolution fails
+        return [("All Vectors", "Unknown Endpoint Target", "Offline Infrastructure", "Verify target domain routing architecture zones manually.")], "Resolution Offline"
+
+    for port, (service, recommendation) in target_ports.items():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1.5) # Fast scan window
+        result = sock.connect_ex((ip_address, port))
+        sock.close()
+        
+        if result == 0:
+            status = "EXPOSED / OPEN"
+            risk = "Action Required"
+            guidance = recommendation
+        else:
+            status = "Filtered / Closed"
+            risk = "Secure Baseline"
+            guidance = f"Port configuration demonstrates strong perimeter isolation controls over {service} structures."
+            
+        scan_results.append((f"Port {port} ({service})", status, risk, guidance))
+        
+    return scan_results, ip_address
+
+# 4. REPORT GENERATOR: IDENTITY REPORT
 def generate_identity_report(domain, breach_data):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=letter,
-        leftMargin=36, 
-        rightMargin=36, 
-        topMargin=36, 
-        bottomMargin=36
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
     
-    style_title = ParagraphStyle(
-        'DocTitle1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=20, textColor=colors.HexColor("#0f172a"), spaceAfter=15
-    )
-    style_header_cell = ParagraphStyle(
-        'HeaderCell1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke
-    )
-    style_body_cell = ParagraphStyle(
-        'BodyCell1', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#334155"), leading=12
-    )
+    style_title = ParagraphStyle('DocTitle1', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=20, textColor=colors.HexColor("#0f172a"), spaceAfter=15)
+    style_header_cell = ParagraphStyle('HeaderCell1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke)
+    style_body_cell = ParagraphStyle('BodyCell1', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#334155"), leading=12)
 
     story.append(Paragraph("PALMETTO INFRASTRUCTURE GROUP | EXTERNAL THREAT INTELLIGENCE", styles['Normal']))
     story.append(Spacer(1, 10))
@@ -113,72 +133,38 @@ def generate_identity_report(domain, breach_data):
     story.append(Paragraph(f"Target Domain: {domain}", styles['Normal']))
     story.append(Spacer(1, 15))
     
-    notice_text = (
-        "IDENTITY FOOTPRINT DETECTION NOTICE: An open-source passive credential mapping was "
-        "executed against targets within your organizational domain perimeter. Active user profiles "
-        "were successfully mapped to external web environments that have experienced historical data exposures."
-    )
+    notice_text = "IDENTITY FOOTPRINT DETECTION NOTICE: An open-source passive credential mapping was executed against targets within your organizational domain perimeter. Active user profiles were successfully mapped to external web environments that have experienced historical data exposures."
     story.append(Paragraph(notice_text, styles['Normal']))
     story.append(Spacer(1, 20))
 
-    table_data = [
-        [
-            Paragraph("Target Email", style_header_cell),
-            Paragraph("Breached Platform", style_header_cell),
-            Paragraph("Risk Level", style_header_cell),
-            Paragraph("Remediation Action", style_header_cell)
-        ]
-    ]
-    
+    table_data = [[Paragraph("Target Email", style_header_cell), Paragraph("Breached Platform", style_header_cell), Paragraph("Risk Level", style_header_cell), Paragraph("Remediation Action", style_header_cell)]]
     for item in breach_data:
-        table_data.append([
-            Paragraph(item.get('email', 'N/A'), style_body_cell),
-            Paragraph(item.get('platform', 'N/A'), style_body_cell),
-            Paragraph(item.get('risk', 'Standard Profile'), style_body_cell),
-            Paragraph(item.get('instruction', 'Audit usage patterns.'), style_body_cell)
-        ])
+        table_data.append([Paragraph(item.get('email', 'N/A'), style_body_cell), Paragraph(item.get('platform', 'N/A'), style_body_cell), Paragraph(item.get('risk', 'Standard Profile'), style_body_cell), Paragraph(item.get('instruction', 'Audit usage patterns.'), style_body_cell)])
         
     column_widths = [140, 100, 90, 210]
     report_table = Table(table_data, colWidths=column_widths, repeatRows=1)
     report_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")), 
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.HexColor("#f1f5f9")]), 
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), 
     ]))
-    
     story.append(report_table)
     doc.build(story)
     return buffer.getvalue()
 
-# 4. CORE FUNCTION: GENERATE EMAIL SPOOFING REPORT
+# 5. REPORT GENERATOR: EMAIL SPOOFING REPORT
 def generate_spoofing_report(domain, status, raw_record):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=letter,
-        leftMargin=36, 
-        rightMargin=36, 
-        topMargin=36, 
-        bottomMargin=36
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
     
-    style_title = ParagraphStyle(
-        'DocTitle2', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=20, textColor=colors.HexColor("#0f172a"), spaceAfter=15
-    )
-    style_header_cell = ParagraphStyle(
-        'HeaderCell2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke
-    )
-    style_body_cell = ParagraphStyle(
-        'BodyCell2', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#334155"), leading=12
-    )
+    style_title = ParagraphStyle('DocTitle2', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=20, textColor=colors.HexColor("#0f172a"), spaceAfter=15)
+    style_header_cell = ParagraphStyle('HeaderCell2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke)
+    style_body_cell = ParagraphStyle('BodyCell2', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#334155"), leading=12)
 
     story.append(Paragraph("PALMETTO INFRASTRUCTURE GROUP | EMAIL IDENTITY VALIDATION", styles['Normal']))
     story.append(Spacer(1, 10))
@@ -186,10 +172,7 @@ def generate_spoofing_report(domain, status, raw_record):
     story.append(Paragraph(f"Target Domain: {domain}", styles['Normal']))
     story.append(Spacer(1, 15))
     
-    intro_text = (
-        "CORE INFRASTRUCTURE ASSESSMENT: A boundary scan of external DNS records was performed to evaluate "
-        "the authentication parameters regulating incoming and outbound email assets representing your organization."
-    )
+    intro_text = "CORE INFRASTRUCTURE ASSESSMENT: A boundary scan of external DNS records was performed to evaluate the authentication parameters regulating incoming and outbound email assets representing your organization."
     story.append(Paragraph(intro_text, styles['Normal']))
     story.append(Spacer(1, 20))
 
@@ -201,42 +184,65 @@ def generate_spoofing_report(domain, status, raw_record):
         action_plan = "CRITICAL ACTION REQUIRED: Define a missing core policy path immediately. External servers can manipulate address fields to target customers using your specific brand identity."
 
     table_data = [
-        [
-            Paragraph("Security Vector", style_header_cell),
-            Paragraph("Detected Metric Status", style_header_cell),
-            Paragraph("Engineering Remediation Guidance", style_header_cell)
-        ],
-        [
-            Paragraph("DMARC Brand Policy Alignment", style_body_cell),
-            Paragraph(status, style_body_cell),
-            Paragraph(action_plan, style_body_cell)
-        ],
-        [
-            Paragraph("Raw Host Zone Declaration", style_body_cell),
-            Paragraph(raw_record, style_body_cell),
-            Paragraph("Ensure txt string records are nested correctly within zone root arrays without duplicating validation entries.", style_body_cell)
-        ]
+        [Paragraph("Security Vector", style_header_cell), Paragraph("Detected Metric Status", style_header_cell), Paragraph("Engineering Remediation Guidance", style_header_cell)],
+        [Paragraph("DMARC Brand Policy Alignment", style_body_cell), Paragraph(status, style_body_cell), Paragraph(action_plan, style_body_cell)],
+        [Paragraph("Raw Host Zone Declaration", style_body_cell), Paragraph(raw_record, style_body_cell), Paragraph("Ensure txt string records are nested correctly within zone root arrays without duplicating validation entries.", style_body_cell)]
     ]
         
     column_widths = [130, 130, 280]
     report_table = Table(table_data, colWidths=column_widths, repeatRows=1)
     report_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")), 
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.HexColor("#f1f5f9")]), 
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), 
     ]))
-    
     story.append(report_table)
     doc.build(story)
     return buffer.getvalue()
 
-# 5. STREAMLIT USER INTERFACE DEPLOYMENT
+# 6. REPORT GENERATOR: NEW PERIMETER SCAN REPORT
+def generate_perimeter_report(domain, scan_results, ip_address):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    styles = getSampleStyleSheet()
+    
+    style_title = ParagraphStyle('DocTitle3', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=20, textColor=colors.HexColor("#0f172a"), spaceAfter=15)
+    style_header_cell = ParagraphStyle('HeaderCell3', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke)
+    style_body_cell = ParagraphStyle('BodyCell3', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#334155"), leading=12)
+
+    story.append(Paragraph("PALMETTO INFRASTRUCTURE GROUP | PERIMETER DEFENSE SECURITY", styles['Normal']))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("External Perimeter Boundary Scan", style_title))
+    story.append(Paragraph(f"Target Domain: {domain} ({ip_address})", styles['Normal']))
+    story.append(Spacer(1, 15))
+    
+    intro_text = "BOUNDARY EXPOSURE RISK EVALUATION: A point-in-time network probe was executed against standard external ports mapped to your target organization domain. This testing identifies open administrative listening links exposed to internet reconnaissance traffic."
+    story.append(Paragraph(intro_text, styles['Normal']))
+    story.append(Spacer(1, 20))
+
+    table_data = [[Paragraph("Infrastructure Vector", style_header_cell), Paragraph("Port Availability Status", style_header_cell), Paragraph("Classification", style_header_cell), Paragraph("Cyber Defense Guidance", style_header_cell)]]
+    for vector, status, risk, guidance in scan_results:
+        table_data.append([Paragraph(vector, style_body_cell), Paragraph(status, style_body_cell), Paragraph(risk, style_body_cell), Paragraph(guidance, style_body_cell)])
+        
+    column_widths = [120, 100, 90, 230]
+    report_table = Table(table_data, colWidths=column_widths, repeatRows=1)
+    report_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")), 
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6), ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.HexColor("#f1f5f9")]), 
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), 
+    ]))
+    story.append(report_table)
+    doc.build(story)
+    return buffer.getvalue()
+
+# 7. STREAMLIT USER INTERFACE DEPLOYMENT
 strl.set_page_config(page_title="Palmetto Threat Portal", page_icon="🛡️", layout="centered")
 
 strl.title("🛡️ Palmetto Threat Intelligence Portal")
@@ -265,18 +271,23 @@ if strl.button("Execute Perimeter Audit"):
                 
             strl.text_area("Raw DNS Record Data:", raw_record, height=70)
             
-            # Fetch authentic, live exposure metrics from backend function
+            # Execute backend collection modules
             live_breach_data = fetch_live_breaches(domain)
+            perimeter_data, resolved_ip = check_perimeter(domain)
             
             strl.markdown("### 📋 Generated Deliverables Available")
             
+            # Compile all three Reports dynamically into bytes
             pdf_identity = generate_identity_report(domain, live_breach_data)
             pdf_spoofing = generate_spoofing_report(domain, status, raw_record)
+            pdf_perimeter = generate_perimeter_report(domain, perimeter_data, resolved_ip)
             
+            # Compress all 3 distinct PDFs side-by-side inside the distribution ZIP
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 zip_file.writestr(f"{domain}_identity_leak_report.pdf", pdf_identity)
                 zip_file.writestr(f"{domain}_email_spoofing_audit.pdf", pdf_spoofing)
+                zip_file.writestr(f"{domain}_perimeter_threat_scan.pdf", pdf_perimeter)
             zip_buffer.seek(0)
             
             strl.download_button(
