@@ -1,12 +1,37 @@
+import streamlit as strl
+import dns.resolver
+import json
+import io
+import os
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-def generate_identity_report(filename, domain, breach_data):
-    # 1. Setup Document Setup with 0.5-inch margins (Letter width is 612, printable area is 540)
+# 1. CORE FUNCTION: RUN PASSIVE DNS AUDIT
+def check_dmarc(domain):
+    try:
+        query = f"_dmarc.{domain}"
+        answers = dns.resolver.resolve(query, 'TXT')
+        for rdata in answers:
+            for txt_string in rdata.strings:
+                record = txt_string.decode('utf-8')
+                if "v=DMARC1" in record:
+                    if "p=reject" in record:
+                        return "Secure (p=reject)", record
+                    elif "p=quarantine" in record:
+                        return "Partial (p=quarantine)", record
+                    elif "p=none" in record:
+                        return "Vulnerable (p=none)", record
+        return "No DMARC Record Found", "Missing"
+    except Exception:
+        return "No DMARC Record Found", "Missing"
+
+# 2. CORE FUNCTION: GENERATE CLEAN IDENTITY REPORT
+def generate_identity_report(domain, breach_data):
+    buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        filename, 
+        buffer, 
         pagesize=letter,
         leftMargin=36, 
         rightMargin=36, 
@@ -15,10 +40,18 @@ def generate_identity_report(filename, domain, breach_data):
     )
     story = []
     
-    # 2. Setup Typography Styles
     styles = getSampleStyleSheet()
     
     # Custom text styles to handle cell wrapping cleanly
+    style_title = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=20,
+        textColor=colors.HexColor("#0f172a"),
+        spaceAfter=15
+    )
+    
     style_header_cell = ParagraphStyle(
         'HeaderCell',
         parent=styles['Normal'],
@@ -32,17 +65,26 @@ def generate_identity_report(filename, domain, breach_data):
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=9,
-        textColor=colors.HexColor("#cbd5e1"), # Light text corresponding to your slate UI
+        textColor=colors.HexColor("#334155"),
         leading=12
     )
 
-    # ... Include your document Header / Title logic here ...
-    # Example:
-    # story.append(Paragraph("Employee Identity Leak Exposure Analysis", styles['Title']))
-    # story.append(Spacer(1, 15))
+    # Title & Metadata Headers
+    story.append(Paragraph("PALMETTO INFRASTRUCTURE GROUP | EXTERNAL THREAT INTELLIGENCE", styles['Normal']))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Employee Identity Leak Exposure Analysis", style_title))
+    story.append(Paragraph(f"Target Domain: {domain}", styles['Normal']))
+    story.append(Spacer(1, 15))
+    
+    notice_text = (
+        "IDENTITY FOOTPRINT DETECTION NOTICE: An open-source passive credential mapping was "
+        "executed against targets within your organizational domain perimeter. Active user profiles "
+        "were successfully mapped to external web environments that have experienced historical data exposures."
+    )
+    story.append(Paragraph(notice_text, styles['Normal']))
+    story.append(Spacer(1, 20))
 
-    # 3. Build Table Structure with Clean Headers
-    # Replacing truncated text strings with concise titles
+    # Build Table Structure with Clean Headers
     table_data = [
         [
             Paragraph("Target Email", style_header_cell),
@@ -52,9 +94,8 @@ def generate_identity_report(filename, domain, breach_data):
         ]
     ]
     
-    # 4. Populate Dynamic Rows and Wrap Content
+    # Populate Dynamic Rows and Wrap Content
     for item in breach_data:
-        # Expected keys matching your data collection structures
         email = item.get('email', 'N/A')
         platform = item.get('platform', 'N/A')
         risk = item.get('risk', 'Standard Profile')
@@ -67,26 +108,71 @@ def generate_identity_report(filename, domain, breach_data):
             Paragraph(instruction, style_body_cell)
         ])
         
-    # 5. Enforce Strict Column Width Matching
     # Combined width matches the 540px printable canvas space perfectly
     column_widths = [140, 100, 90, 210]
-    
     report_table = Table(table_data, colWidths=column_widths, repeatRows=1)
     
-    # 6. Apply Professional Table Styling
     report_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")), # Dark slate background for header
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f172a")), 
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
         ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#1e293b"), colors.HexColor("#334155")]), # Alternate slate rows
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#475569")), # Subtle borders
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.HexColor("#f1f5f9")]), 
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), 
     ]))
     
     story.append(report_table)
-    
-    # 7. Compile Layout Architecture
     doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# 3. STREAMLIT USER INTERFACE DEPLOYMENT
+strl.set_page_config(page_title="Palmetto Threat Portal", page_icon="🛡️", layout="centered")
+
+strl.title("🛡️ Palmetto Threat Intelligence Portal")
+strl.subheader("On-Demand External Infrastructure Risk Validation")
+
+domain_input = strl.text_input("Enter Corporate Domain Name (e.g., company.com):", "")
+
+if strl.button("Execute Perimeter Audit"):
+    if domain_input.strip() == "":
+        strl.warning("Please enter a valid domain name.")
+    else:
+        domain = domain_input.strip().lower()
+        
+        with strl.spinner("Analyzing public architecture records..."):
+            status, raw_record = check_dmarc(domain)
+            
+            strl.write("---")
+            strl.markdown(f"### Audit Results for: **{domain}**")
+            
+            if "Secure" in status:
+                strl.success(f"**DMARC Status:** {status}")
+            elif "Partial" in status:
+                strl.info(f"**DMARC Status:** {status}")
+            else:
+                strl.error(f"**DMARC Status:** {status}")
+                
+            strl.text_area("Raw DNS Record Data:", raw_record, height=70)
+            
+            # Simulated Identity Leak Data for Demonstration
+            mock_breach_data = [
+                {"email": f"jimsmith@{domain}", "platform": "amazon.com", "risk": "High Risk Profile", "instruction": "Change corporate core credential parameters immediately to eradicate password cross-contamination."},
+                {"email": f"jimsmith@{domain}", "platform": "any.do", "risk": "Standard Profile", "instruction": "Audit identity usage patterns on third-party channels."},
+                {"email": f"jimsmith@{domain}", "platform": "twitter.com", "risk": "High Risk Profile", "instruction": "Change corporate core credential parameters immediately to eradicate password cross-contamination."}
+            ]
+            
+            strl.markdown("### 📋 Generated Deliverables Available")
+            
+            # Generate the Report PDF in memory
+            pdf_buffer = generate_identity_report(domain, mock_breach_data)
+            
+            strl.download_button(
+                label="📥 Download Employee Identity Leak Report (PDF)",
+                data=pdf_buffer,
+                file_name=f"{domain}_identity_leak_report.pdf",
+                mime="application/pdf"
+            )
