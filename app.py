@@ -10,7 +10,6 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-
 # 1. LIVE THREAT INTEL FETCH (BreachDirectory API integration)
 def fetch_live_breaches(domain):
     api_key = strl.secrets.get("BREACH_API_KEY", None)
@@ -32,6 +31,11 @@ def fetch_live_breaches(domain):
     
     try:
         response = requests.get(url, headers=headers, params=querystring, timeout=10)
+        
+        # DEBUG BLOCK: Show connection errors directly on screen if they happen
+        if response.status_code != 200:
+            strl.error(f"API Error Code: {response.status_code} - Check your RapidAPI subscription or key validity.")
+            
         if response.status_code == 200:
             raw_data = response.json()
             results = raw_data if isinstance(raw_data, list) else raw_data.get("result", [])
@@ -54,6 +58,12 @@ def fetch_live_breaches(domain):
                     "platform": sources,
                     "risk": risk,
                     "instruction": instruction
+                })
+            return formatted_list
+    except Exception as e:
+        strl.error(f"Connection Exception Triggered: {str(e)}")
+        
+    return [{"email": f"user@{domain}", "platform": "Simulated Sync Node", "risk": "Standard Profile", "instruction": "Configure API credentials to activate live database querying."}]                    "instruction": instruction
                 })
             return formatted_list
     except Exception:
