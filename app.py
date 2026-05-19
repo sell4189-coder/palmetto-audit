@@ -179,7 +179,7 @@ def create_leak_report(domain, target_email, platforms_list):
     pdf.set_font("Helvetica", "", 9.5)
     pdf.set_text_color(27, 38, 59)
     pdf.set_x(15)
-    pdf.multi_cell(267, 4.5, "An open-source passive credential mapping was executed against targets within your organizational domain perimeter. Active user profiles were successfully mapped to external web environments that have experienced historical plaintext exposures.")
+    pdf.multi_cell(267, 4.5, "An open-source passive credential mapping was executed against targets within your organizational domain perimeter. Active user profiles were successfully mapped to external web environments that have experienced historical plaintext or cryptographically hashed data exposures.")
     
     pdf.set_y(pdf.get_y() + 12)
     
